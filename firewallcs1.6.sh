@@ -5,6 +5,10 @@ apt update
 DEBIAN_FRONTEND=noninteractive apt install -y \
 iptables ipset tcpdump iptables-persistent netfilter-persistent
 
+echo "=== Configurando Passive FTP ==="
+echo "40110 40210" | tee /etc/pure-ftpd/conf/PassivePortRange
+service pure-ftpd restart
+
 echo "=== Limpando regras ==="
 iptables -F
 iptables -X
@@ -75,7 +79,7 @@ iptables -A INPUT -p icmp --icmp-type echo-request \
 # TCP LIBERADO
 # =========================
 
-for port in 22 2222 21 2121 80 443 8080 8888 3306 12679 12680 38151; do
+for port in 22 2222 21 2121 80 443 8080 8888 3306 12679 38151; do
     iptables -A INPUT -p tcp --dport $port -j ACCEPT
 done
 
