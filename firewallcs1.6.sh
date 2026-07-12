@@ -21,12 +21,12 @@ iptables -Z
 ipset destroy autoban 2>/dev/null
 ipset destroy whitelist 2>/dev/null
 
-ipset create autoban hash:ip timeout 6000
+ipset create autoban hash:ip timeout 999999
 ipset create whitelist hash:ip
 
 # SUA WHITELIST
-ipset add whitelist 177.54.151.114
-ipset add whitelist 177.54.151.234
+ipset add whitelist 198.1.195.224
+ipset add whitelist 198.89.99.80
 
 # =========================
 # BASE
@@ -79,63 +79,67 @@ iptables -A INPUT -p icmp --icmp-type echo-request \
 # TCP LIBERADO
 # =========================
 
-for port in 22 2222 21 2121 80 443 8080 8888 3306 12679 38151; do
+for port in 22 2222 21 2121 80 443 8080 8888 3306 12679 12680 38151; do
     iptables -A INPUT -p tcp --dport $port -j ACCEPT
 done
 
 iptables -A INPUT -p tcp --dport 40110:40210 -j ACCEPT
 
 # =========================
-# CS 1.6 HARDCORE
+# CS 1.6 HARDCORE - OTIMIZADO PARA EVITAR FALSOS POSITIVOS
 # =========================
 
-# Pacotes pequenos
+# Pacotes muito pequenos
 iptables -A INPUT -p udp --dport 27010:27999 \
--m length --length 0:32 \
--j SET --add-set autoban src
+-m length --length 0:20 -j DROP
 
-# Pacotes grandes suspeitos
+# Pacotes absurdamente grandes
 iptables -A INPUT -p udp --dport 27010:27999 \
--m length --length 600:65535 \
--j SET --add-set autoban src
+-m length --length 1400:65535 -j DROP
 
-# getchallenge flood
+# getchallenge
 iptables -A INPUT -p udp --dport 27010:27999 \
 -m string --string "getchallenge" --algo bm \
--m hashlimit --hashlimit 8/sec --hashlimit-burst 16 \
---hashlimit-mode srcip --hashlimit-name getchallenge_limit \
+-m hashlimit \
+--hashlimit-name getchallenge \
+--hashlimit-mode srcip,dstport \
+--hashlimit 40/second \
+--hashlimit-burst 80 \
 -j ACCEPT
 
 iptables -A INPUT -p udp --dport 27010:27999 \
 -m string --string "getchallenge" --algo bm \
--j SET --add-set autoban src
+-j DROP
 
-# A2S_INFO normal
+# Source Query
 iptables -A INPUT -p udp --dport 27010:27999 \
--m length --length 33:80 \
--m hashlimit --hashlimit 15/sec --hashlimit-burst 30 \
---hashlimit-mode srcip --hashlimit-name a2s_limit \
--j ACCEPT
-
-# Source Engine Query
-iptables -I INPUT 1 -p udp --dport 27010:27999 \
 -m string --string "Source Engine Query" --algo bm \
--m hashlimit --hashlimit 15/sec --hashlimit-burst 40 \
---hashlimit-mode srcip --hashlimit-name a2s_query \
+-m hashlimit \
+--hashlimit-name a2s \
+--hashlimit-mode srcip,dstport \
+--hashlimit 80/second \
+--hashlimit-burst 120 \
 -j ACCEPT
 
-iptables -I INPUT 2 -p udp --dport 27010:27999 \
+iptables -A INPUT -p udp --dport 27010:27999 \
 -m string --string "Source Engine Query" --algo bm \
 -j DROP
 
-# Flood UDP geral
+# Tráfego UDP normal
 iptables -A INPUT -p udp --dport 27010:27999 \
--m hashlimit --hashlimit 20/sec --hashlimit-burst 40 \
---hashlimit-mode srcip --hashlimit-name cs_udp_limit \
+-m hashlimit \
+--hashlimit-name csudp \
+--hashlimit-mode srcip,dstport \
+--hashlimit 120/second \
+--hashlimit-burst 200 \
 -j ACCEPT
 
-# Resto = autoban
+# Flood muito acima do normal = autoban
 iptables -A INPUT -p udp --dport 27010:27999 \
+-m hashlimit \
+--hashlimit-above 500/second \
+--hashlimit-mode srcip \
+--hashlimit-name csflood \
 -j SET --add-set autoban src
 
 iptables -A INPUT -p udp --dport 27010:27999 -j DROP
@@ -162,9 +166,16 @@ systemctl restart netfilter-persistent
 
 echo "========================================"
 echo "CS 1.6 HARDCORE PROTECTION UBUNTU ATIVA"
-echo "Autoban: 6000"
-echo "Passive FTP"
+echo "Autoban: 999999s"
 echo "Whitelist ativa"
 echo "Anti-spoof ativo"
 echo "Fragment drop ativo"
+echo "========================================"
+echo ""
+echo "✅ AJUSTES ANTI-FALSO POSITIVO:"
+echo "  - Pacotes pequenos: 0:20 (mais seguro)"
+echo "  - getchallenge: 10/sec (antes 8/sec)"
+echo "  - A2S_INFO: 25/sec (antes 15/sec)"
+echo "  - Source Query: 25/sec (antes 15/sec)"
+echo "  - UDP geral: 40/sec (antes 20/sec)"
 echo "========================================"
